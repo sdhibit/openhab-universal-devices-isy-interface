@@ -21,7 +21,7 @@ function log(message) {
 * Convert 0 - 255 to 0 - 100 and 0 - 100 to 0 - 255
 */
 function minMaxConversion(max, value) {
-  if (max !== undefined && value !== undefined) {
+  if (max && value) {
     if (max === 100) {
       return Math.round((100*value)/255);
 
@@ -35,48 +35,50 @@ function minMaxConversion(max, value) {
 /*
  * MQTT Client Connect
  */
-mqttClient = mqtt.createClient(isyconfig.mqttConfig.port, isyconfig.mqttConfig.host);
+if (isyconfig.mqttConfig.host) {
+  mqttClient = mqtt.createClient(isyconfig.mqttConfig.port, isyconfig.mqttConfig.host);
 
-// listen for control events
-mqttClient.subscribe(isyconfig.mqttConfig.controlTopic + '/#');
+  // listen for control events
+  mqttClient.subscribe(isyconfig.mqttConfig.controlTopic + '/#');
 
-/*
- * Listen to messages from subscribed MQTT topics
- */
-mqttClient.on('message', function (topic, message) {
-  if (isyconfig.verbose) {
-    log('Incoming message: Topic: ' + topic + ' Message: ' + message);
-  }
+  /*
+   * Listen to messages from subscribed MQTT topics
+   */
+  mqttClient.on('message', function (topic, message) {
+    if (isyconfig.verbose) {
+      log('Incoming message: Topic: ' + topic + ' Message: ' + message);
+    }
 
-  // Control message
-  var controlTopicRE = new RegExp(isyconfig.mqttConfig.controlTopic + "\/(\\S+)");
-  var controlMatch = topic.match(controlTopicRE);
+    // Control message
+    var controlTopicRE = new RegExp(isyconfig.mqttConfig.controlTopic + "\/(\\S+)");
+    var controlMatch = topic.match(controlTopicRE);
 
-  if (controlMatch) {
-    var controlData = controlMatch[1].split('\/');
-    var node = controlData[0];
-    var command = controlData[1];
-    var action = message.toString();
+    if (controlMatch) {
+      var node = controlMatch[1].split('\/', 1)[0];
+      var messageData = message.toString().split(',');
+      var command = messageData[0];
+      var action = messageData[1];
 
-    log('Node: ' + node + ' Command: ' + command + ' Action: ' + action);
+      log('Node: ' + node + ' Command: ' + command + ' Action: ' + action);
 
-    parseCommand(node, command, action);
-  }
+      parseCommand(node, command, action);
+    }
 
-});
+  });
 
-mqttClient.on('connect', function(packet) {
-  if (isyconfig.verbose) {
-    log('Connected to mqtt broker.');
-  }
+  mqttClient.on('connect', function(packet) {
+    if (isyconfig.verbose) {
+      log('Connected to mqtt broker.');
+    }
 
-});
+  });
 
-mqttClient.on('close', function(err) {
-  log('Closed connection from mqtt broker.');
-});
+  mqttClient.on('close', function(err) {
+    log('Closed connection from mqtt broker.');
+  });
 
-//mqttClient.end();
+  //mqttClient.end();
+}
 
 /*
  * Publish events to MQTT broker
@@ -125,7 +127,7 @@ function parseCommand(node, command, action) {
       log('Sending security command to isy for node: ' + node);
     }
 
-    if (action.match(/0|1/)) {
+    if (action && action.match(/0|1/)) {
       sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/SECMD/' + action);
     }
 
@@ -140,7 +142,7 @@ function parseCommand(node, command, action) {
       log('Sending climate mode command to isy for node: ' + node);
     }
 
-    if (action.match(/[0-7]/)) {
+    if (action && action.match(/[0-7]/)) {
       sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/CLIMD/' + action);
     }
 
@@ -154,7 +156,7 @@ function parseCommand(node, command, action) {
       log('Sending climate fan state command to isy for node: ' + node);
     }
 
-    if (action.match(/0|1/)) {
+    if (action && action.match(/0|1/)) {
       sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/CLIFS/' + action);
     }
 
@@ -168,7 +170,9 @@ function parseCommand(node, command, action) {
       log('Sending climate heat set point command to isy for node: ' + node);
     }
 
-    sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/CLISPH/' + action);
+    if (action) {
+      sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/CLISPH/' + action);
+    }
 
   // Set climate cool set point
   // /rest/nodes/<node-id>/CLISPC/<temp>
@@ -180,7 +184,9 @@ function parseCommand(node, command, action) {
       log('Sending climate cool set point command to isy for node: ' + node);
     }
 
-    sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/CLISPC/' + action);
+    if (action) {
+      sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/CLISPC/' + action);
+    }
 
   // Run program control
   // /rest/programs/<program-id>/<program-cmd>
@@ -194,7 +200,7 @@ function parseCommand(node, command, action) {
       log('Sending program command to isy for program: ' + node);
     }
 
-    if (action.match(/run|runThen|runElse|stop|enable|disable|enableRunAtStartup|disableRunAtStartup/)) {
+    if (action && action.match(/run|runThen|runElse|stop|enable|disable|enableRunAtStartup|disableRunAtStartup/)) {
       sendCommand('GET', '/rest/programs/' + nodeURLEncoded + '/' + action);
     }
 
@@ -238,38 +244,40 @@ function parseCommand(node, command, action) {
 
     sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DIM');
 
-  // If command is not defined, issue standard on / off action
+  // On / off / level command
   // /rest/nodes/<node-id>/cmd/<command-name>
   // <command-name>
   // don = on | dof = off
   // To send level to device
   // /rest/nodes/<node-id>/cmd/<command-name>/<action-name>
-  } else {
-    // On action sent
-    if (action.match(/on/i) || action === '100') {
-      if (isyconfig.verbose) {
-        log('Sending on action to isy for node: ' + node);
+  } else if (command.match(/on/i)) {
+
+      // Percentage action sent
+      if (action && action.match(/[1-99]/)) {
+        if (isyconfig.verbose) {
+          log('Sending level action to isy for node: ' + node);
+        }
+
+        var actionConv = minMaxConversion(255, action);
+        sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DON/' + actionConv);
+
+      } else {
+
+        if (isyconfig.verbose) {
+          log('Sending on action to isy for node: ' + node);
+        }
+
+        sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DON');
       }
 
-      sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DON');
-
-    // Off action sent
-    } else if (action.match(/off/i) || action === '0') {
-      if (isyconfig.verbose) {
-        log('Sending off action to isy for node: ' + node);
-      }
-
-      sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DOF');
-
-    // Percentage action sent
-    } else if (action.match(/[1-99]/)) {
-      if (isyconfig.verbose) {
-        log('Sending level action to isy for node: ' + node);
-      }
-
-      var actionConv = minMaxConversion(255, action);
-      sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DON/' + actionConv);
+  // Off action sent
+  } else if (command.match(/off/i)) {
+    if (isyconfig.verbose) {
+      log('Sending off action to isy for node: ' + node);
     }
+
+    sendCommand('GET', '/rest/nodes/' + nodeURLEncoded + '/cmd/DOF');
+
   }
 }
 
@@ -387,7 +395,7 @@ function parseEvents(xml) {
           // Status Update
           if (result.Event.control && result.Event.control === 'ST') {
             // publish isy status event to mqtt (e.g. /isy/event/1E.4.58.1/status)
-            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/status', result.Event.action);
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/st', result.Event.action);
 
           // Device On command
           } else if (result.Event.control && result.Event.control === 'DON') {
@@ -419,6 +427,35 @@ function parseEvents(xml) {
             // publish isy dim event to mqtt (e.g. /isy/event/1E.4.58.1/dim)
             publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/dim', result.Event.action);
 
+          // Device Climate Heat Setpoint command
+          } else if (result.Event.control && result.Event.control === 'CLISPH') {
+            // publish isy climate heat setpoint event to mqtt (e.g. /isy/event/1E.4.58.1/clisph)
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/clisph', result.Event.action);
+
+          // Device Climate Cool Setpoint command
+          } else if (result.Event.control && result.Event.control === 'CLISPC') {
+            // publish isy climate cool setpoint event to mqtt (e.g. /isy/event/1E.4.58.1/clispc)
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/clispc', result.Event.action);
+
+          // Device Climate Fan State command
+          } else if (result.Event.control && result.Event.control === 'CLIFS') {
+            // publish isy climate fan state event to mqtt (e.g. /isy/event/1E.4.58.1/clifs)
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/clifs', result.Event.action);
+
+          // Device Climate Thermostat Mode command
+          } else if (result.Event.control && result.Event.control === 'CLIMD') {
+            // publish isy climate thermostat mode event to mqtt (e.g. /isy/event/1E.4.58.1/climd)
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/climd', result.Event.action);
+
+          // Device Climate Heat / Cool State command
+          } else if (result.Event.control && result.Event.control === 'CLIHCS') {
+            // publish isy climate heat / cool state event to mqtt (e.g. /isy/event/1E.4.58.1/clihcs)
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/clihcs', result.Event.action);
+
+          // Device Climate Humidity change
+          } else if (result.Event.control && result.Event.control === 'CLIHUM') {
+            // publish isy climate humidity event to mqtt (e.g. /isy/event/1E.4.58.1/clihum)
+            publishMQTT(isyconfig.mqttConfig.eventTopic + '/' + node + '/clihum', result.Event.action);
           }
 
           /*if (isyDevType.cat0[deviceInfo[result.Event.node].cat]) {
