@@ -1,7 +1,7 @@
-// Transform from 0-3 to 0(OFF), 63(Low), 191(Medium), 255(High)
+// Transform from 0-3 to 0(OFF), 25(Low), 75(Medium), 100(High)
 (function(inStr) {
-    if (val === 0) return "off";
-    if (val === 1) return 'on,25';
-    if (val === 2) return 'on,75';
-    if (val === 3) return "on";
+    if (inStr === '0') return 'off';
+    if (inStr == '1') return 'on,25';
+    if (inStr == '2') return 'on,75';
+    if (inStr == '3') return 'on';
 })(input)

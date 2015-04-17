@@ -1,6 +1,5 @@
 // Transform from OFF, ON to 0, 100
 (function(inStr) {
-    var val = inStr;
-    if (inStr == "OFF") return "on";
-    if (inStr == "ON") return "off";
+    if (inStr === 'OFF') return 'off';
+    if (inStr === 'ON') return 'on';
 })(input)
