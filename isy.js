@@ -4,7 +4,7 @@ var xml2js = require('xml2js').parseString;
 var mqtt = require('mqtt');
 var http = require('http');
 var isyconfig = require('./isyconfig');
-var isyDevType = require('./isydevtypes.js');
+var ws = require('ws');
 
 var deviceInfo = {};
 var isyClient = '';
@@ -487,44 +487,27 @@ function parseIncomingData(data) {
 }
 
 /*
- * Subscription request to the ISY.
- */
-function subscribe(isyClient) {
-  if (isyconfig.verbose) {
-    log('Subscribing to ISY.');
-  }
-
-  var auth = 'Basic ' + new Buffer(isyconfig.user + ':' + isyconfig.password).toString('base64');
-  var body = '<s:Envelope><s:Body>\
-    <u:Subscribe xmlns:u="urn:udicom:service:X_Insteon_Lighting_Service:1">\
-    <reportURL>REUSE_SOCKET</reportURL><duration>infinite</duration></u:Subscribe>\
-    </s:Body></s:Envelope>';
-
-  isyClient.write('POST /services HTTP/1.1\r\n');
-  isyClient.write('Host: ' + isyconfig.host + ':' + isyconfig.port + '\r\n');
-  isyClient.write('Authorization: ' + auth + '\r\n');
-  isyClient.write('SOAPACTION: urn:udi-com:service:X_Insteon_Lighting_Service:1#Subscribe\r\n');
-  isyClient.write('Content-Length: ' + body.length + '\r\n');
-  isyClient.write('Content-Type: text/xml; charset="utf-8"\r\n\r\n');
-  isyClient.write(body);
-  isyClient.write('\r\n');
-}
-
-/*
  * Create socket and connect to ISY.
  */
 function connectISY() {
-  isyClient = new net.Socket();
-  isyClient.connect(isyconfig.port, isyconfig.host, function() {
-    if (isyconfig.verbose) {
-      log('Connected to ISY!');
-    }
+  var auth = isyconfig.user + ':' + isyconfig.password;
+  var protocol = 'ISYSUB';
+  var url = 'ws://' + auth + '@' + isyconfig.host + ':' + isyconfig.port + '/rest/subscribe';
 
-    isyClient.setEncoding("utf8");
-    subscribe(isyClient);
+  isyClient = new ws(url, protocol, {
+    origin: 'com.universal-devices.websockets.isy',
+    protocolVersion: 13
   });
 
-  isyClient.on('data', function(data) {
+  isyClient.on('open', function open() {
+    console.log('connected');
+  });
+
+  isyClient.on('close', function close() {
+    console.log('disconnected');
+  });
+
+  isyClient.on('message', function message(data, flags) {
     if (isyconfig.debug) {
       log('DEBUG: Incoming: ' + data.toString());
     }
@@ -542,8 +525,6 @@ function connectISY() {
       }
     }
 
-    //isyClient.end();
-
   });
 
   isyClient.on('error', function (e) {
@@ -551,7 +532,7 @@ function connectISY() {
 
   });
 
-  isyClient.on('end', function() {
+  isyClient.on('close', function() {
     if (isyconfig.verbose) {
       log('Disconnected from ISY.');
 
@@ -575,7 +556,7 @@ process.on('SIGINT', function() {
   isyconfig.reconnect = false;
 
   log('Disconnecting from ISY controller.');
-  isyClient.end();
+  isyClient.close();
   log('Disconnecting from mqtt broker.');
   mqttClient.end();
   //process.exit();
